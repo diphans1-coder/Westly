@@ -628,9 +628,9 @@ async function callClaude(messages, system = "", maxTokens = 1200) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "claude-sonnet-4-5",
+        model: "claude-sonnet-4-6",
         max_tokens: maxTokens,
-        system,
+        ...(system ? { system } : {}),
         messages,
       }),
     });
@@ -1245,6 +1245,7 @@ function PlanView({ transactions, savedPlan, onSavePlan }) {
   const [plan, setPlan] = useState(savedPlan);
   const [loading, setLoading] = useState(false);
   const [profileStep, setProfileStep] = useState(1);
+  const [planRetryCount, setPlanRetryCount] = useState(0);
   const [profile, setProfile] = useState({
     // Step 1 — Personal
     age:"", marital:"single", dependents:"0", employment:"employed",
@@ -1293,6 +1294,8 @@ function PlanView({ transactions, savedPlan, onSavePlan }) {
     const validationError = validateProfile();
     if (validationError) { setPlan({ error: validationError, rawResponse: "" }); return; }
     setLoading(true); setPlan(null);
+    // Note: planRetryCount is NOT reset here on manual click — 
+    // it's reset on success so user can always manually retry
     // Safety net — never stuck loading longer than 35 seconds
     const safetyTimer = setTimeout(() => {
       setLoading(false);
@@ -1554,11 +1557,12 @@ Return JSON: {"priority_actions":[{"rank":1,"urgency":"Immediate","action":"acti
 Return JSON: {"account_holdings":[{"account":"TFSA","holdings":[{"ticker":"VFV.TO","name":"Vanguard S&P 500 ETF","exchange":"TSX","type":"ETF","percentage_of_account":60,"monthly_amount":0,"reason":"US equity grows tax-free","buy_in":"Monthly-DCA","when_to_buy":"1st of each month","suitability":"growth asset — tax-free in TFSA"},{"ticker":"XIC.TO","name":"iShares S&P/TSX","exchange":"TSX","type":"ETF","percentage_of_account":40,"monthly_amount":0,"reason":"Canadian equity tax-free","buy_in":"Monthly-DCA","when_to_buy":"1st of each month","suitability":"Canadian exposure tax-free"}]},{"account":"RRSP","holdings":[{"ticker":"ZAG.TO","name":"BMO Aggregate Bond ETF","exchange":"TSX","type":"Bond ETF","percentage_of_account":60,"monthly_amount":0,"reason":"Bonds sheltered from withholding tax","buy_in":"Monthly-DCA","when_to_buy":"Before March deadline","suitability":"bond income shielded"}]},{"account":"Non-Reg","holdings":[{"ticker":"RY.TO","name":"Royal Bank","exchange":"TSX","type":"Stock","percentage_of_account":100,"monthly_amount":0,"reason":"Dividend tax credit benefit","buy_in":"Monthly-DCA","when_to_buy":"After registered accounts full","suitability":"Canadian dividend tax credit eligible"}]}]}
 Replace ALL values with REAL personalized picks. Adjust for age ${age}, risk ${riskCapacity}, knowledge ${profile.investmentKnowledge}.`;
 
-      // Call C: Portfolio + protection + tax + milestones + risks — enriched context
-      const insuranceContext = insuranceFlags.length > 0 ? insuranceFlags.join("; ") : "No critical gaps";
-      const msgC = `MFDA Canadian advisor. Age ${age} risk ${riskCapacity} province ${profile.province}. Use allocation: ${alloc}. Marginal rate ${marginalRatePct}%. Insurance gaps: ${insuranceContext}. RRSP saves $${rrspTaxSaving} in taxes.${rrspToRrifNote ? " RRIF note: "+rrspToRrifNote : ""} Keep all text fields under 10 words.
-Return JSON: {"allocation":[{"category":"Canadian ETF","name":"iShares S&P/TSX","ticker":"XIC.TO","percentage":20,"icon":"🍁","risk_level":"Medium","why":"Canadian equity core holding"},{"category":"US ETF","name":"Vanguard S&P 500","ticker":"VFV.TO","percentage":30,"icon":"🇺🇸","risk_level":"Medium","why":"US broad market exposure"},{"category":"Bond ETF","name":"BMO Aggregate Bond","ticker":"ZAG.TO","percentage":15,"icon":"🏦","risk_level":"Low","why":"Stability and income buffer"},{"category":"Metal","name":"Gold ETF","ticker":"GLD","percentage":5,"icon":"🥇","risk_level":"Low","why":"Inflation hedge"},{"category":"Canadian Stock","name":"Royal Bank","ticker":"RY.TO","percentage":15,"icon":"🏛️","risk_level":"Medium","why":"Dividend income"},{"category":"US ETF","name":"International Equity","ticker":"VIU.TO","percentage":15,"icon":"🌍","risk_level":"Medium","why":"Global diversification"}],"debt_strategy":{"priority":"High","steps":["step1","step2","step3"],"payoff_timeline":"timeline","high_interest_first":${hasHighInterestDebt}},"insurance_gaps":[{"type":"Life Insurance","status":"missing","priority":"Critical","action":"action","recommended_amount":"${fmt(recommendedLifeInsurance)} term"},{"type":"Disability Insurance","status":"missing","priority":"High","action":"action","recommended_amount":"${fmt(recommendedDisability)}/mo"},{"type":"Critical Illness","status":"missing","priority":"High","action":"action","recommended_amount":"3-6 months income lump sum"}],"tax_optimization":["tip1 specific to ${marginalRatePct}% bracket","tip2","tip3"],"estate_planning":["${estateGaps.length > 0 ? estateGaps[0] : "Beneficiaries confirmed"}","action2","action3"],"behavioral_insights":{"pattern":"observation","strength":"positive","risk":"concern","recommendation":"action"},"milestones":[{"period":"Q3 2025","goal":"goal","amount":"$X"},{"period":"Q1 2026","goal":"goal","amount":"$X"},{"period":"Q3 2026","goal":"goal","amount":"$X"},{"period":"Q1 2027","goal":"goal","amount":"$X"}],"key_risks":[{"icon":"📉","risk":"risk","severity":"High","mitigation":"action"},{"icon":"💸","risk":"risk","severity":"Medium","mitigation":"action"},{"icon":"🏥","risk":"risk","severity":"High","mitigation":"action"},{"icon":"🏠","risk":"risk","severity":"Medium","mitigation":"action"}]}
-Replace ALL placeholder values with real data. Allocation percentages MUST sum to 100.`;
+      // Call C: Portfolio allocation + protection + tax + milestones
+      const insuranceContext = insuranceFlags.length > 0 ? insuranceFlags.slice(0,2).join("; ") : "No critical gaps";
+      const msgC = `MFDA Canadian advisor. Age ${age} risk ${riskCapacity} province ${profile.province}. Marginal rate ${marginalRatePct}%. Insurance: ${insuranceContext}. Use allocation: ${alloc}. Max 10 words per field. Percentages MUST sum to 100.
+Return JSON:
+{"allocation":[{"category":"cat","name":"name","ticker":"X.TO","percentage":0,"icon":"🍁","risk_level":"Low","why":"reason"},{"category":"cat","name":"name","ticker":"X.TO","percentage":0,"icon":"🇺🇸","risk_level":"Medium","why":"reason"},{"category":"cat","name":"name","ticker":"X.TO","percentage":0,"icon":"🏦","risk_level":"Low","why":"reason"},{"category":"cat","name":"name","ticker":"X.TO","percentage":0,"icon":"🥇","risk_level":"Low","why":"reason"},{"category":"cat","name":"name","ticker":"X.TO","percentage":0,"icon":"🌍","risk_level":"Medium","why":"reason"}],"debt_strategy":{"priority":"High","steps":["step1","step2","step3"],"payoff_timeline":"X months","high_interest_first":${hasHighInterestDebt}},"insurance_gaps":[{"type":"Life Insurance","priority":"Critical","action":"action under 10 words","recommended_amount":"${fmt(recommendedLifeInsurance)}"},{"type":"Disability","priority":"High","action":"action","recommended_amount":"${fmt(recommendedDisability)}/mo"}],"tax_optimization":["tip at ${marginalRatePct}% bracket","tip2","tip3"],"estate_planning":["gap1","gap2"],"behavioral_insights":{"pattern":"pattern","strength":"strength","risk":"risk","recommendation":"action"},"milestones":[{"period":"Q3 2025","goal":"goal","amount":"$X"},{"period":"Q1 2026","goal":"goal","amount":"$X"},{"period":"Q3 2026","goal":"goal","amount":"$X"}],"key_risks":[{"icon":"📉","risk":"risk","severity":"High","mitigation":"action"},{"icon":"🏥","risk":"risk","severity":"High","mitigation":"action"},{"icon":"💸","risk":"risk","severity":"Medium","mitigation":"action"}]}
+Replace ALL values with real data for this specific client.`;
 
       // Promise.allSettled — if one call fails/times out, others still complete
       const [resA, resB, resC] = await Promise.allSettled([
@@ -1601,19 +1605,20 @@ Replace ALL placeholder values with real data. Allocation percentages MUST sum t
       if (!merged.allocation?.length) missingFields.push("investment allocation");
 
       if (missingFields.length > 0) {
-        // Auto-retry once before showing error
-        if (!merged._retried) {
-          merged._retried = true;
-          console.warn("Plan quality gate: missing", missingFields.join(", "), "— auto-retrying...");
-          setPlan(null);
-          setLoading(false);
+        // Auto-retry ONCE — use state to track so we don't loop forever
+        if (planRetryCount < 1) {
+          setPlanRetryCount(c => c + 1);
+          console.warn("Plan quality gate: missing", missingFields.join(", "), "— auto-retrying once...");
           clearTimeout(safetyTimer);
-          setTimeout(() => generatePlan(), 1000);
+          setLoading(false);
+          setTimeout(() => generatePlan(), 1500);
           return;
         }
-        // Second failure — show partial plan with warning
-        merged._qualityWarning = `Some sections could not be generated: ${missingFields.join(", ")}. You can regenerate for a complete plan.`;
+        // Second failure — show what we have with a warning
+        merged._qualityWarning = `Some sections could not be generated: ${missingFields.join(", ")}. Tap regenerate to try again.`;
       }
+      // Reset retry count on success
+      setPlanRetryCount(0);
       setPlan(merged);
       onSavePlan(merged);
     } catch (e) {
@@ -1646,7 +1651,7 @@ Replace ALL placeholder values with real data. Allocation percentages MUST sum t
             ))}
           </div>
           <div style={{ fontSize:11, color:"var(--gold)", fontWeight:700, letterSpacing:1, textTransform:"uppercase", marginBottom:14 }}>
-            Step {profileStep}/6 — {stepLabels[profileStep-1]}
+            Step {profileStep}/{stepLabels.length} — {stepLabels[profileStep-1]}
           </div>
 
           <div className="card">
@@ -1738,7 +1743,7 @@ Replace ALL placeholder values with real data. Allocation percentages MUST sum t
               <div className="empty-state">
                 <div className="icon">📋</div>
                 <p style={{marginBottom:12}}>Complete all 7 steps for a professional MFDA/IIROC-level plan.</p>
-                <div style={{fontSize:12,color:"var(--gold)"}}>Step {profileStep}/6 — {stepLabels[profileStep-1]}</div>
+                <div style={{fontSize:12,color:"var(--gold)"}}>Step {profileStep}/{stepLabels.length} — {stepLabels[profileStep-1]}</div>
               </div>
             </div>
           )}
@@ -2458,7 +2463,7 @@ Return JSON (plain text only, no markdown, max 15 words per field): {"tax_score"
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-sonnet-4-5",
+          model: "claude-sonnet-4-6",
           max_tokens: 800,
           system: sys,
           messages: [{
