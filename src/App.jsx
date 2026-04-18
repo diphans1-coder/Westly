@@ -1245,7 +1245,7 @@ function PlanView({ transactions, savedPlan, onSavePlan }) {
   const [plan, setPlan] = useState(savedPlan);
   const [loading, setLoading] = useState(false);
   const [profileStep, setProfileStep] = useState(1);
-  const [planRetryCount, setPlanRetryCount] = useState(0);
+  const planRetryCountRef = useRef(0);
   const [profile, setProfile] = useState({
     // Step 1 — Personal
     age:"", marital:"single", dependents:"0", employment:"employed",
